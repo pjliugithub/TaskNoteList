@@ -60,6 +60,58 @@ def ask_yes_no(title, message):
     root.destroy()
     return result
 
+def render_notes_with_images(text_widget, notes_text, task_id, max_img_width=200, max_img_height=200):
+    """Render notes with embedded images in a Text widget.
+    
+    Args:
+        text_widget: tk.Text widget to render into
+        notes_text: Text content with [IMAGE:filename] references
+        task_id: ID of the task to find image files
+        max_img_width: Maximum width of displayed images
+        max_img_height: Maximum height of displayed images
+    """
+    text_widget.config(state=tk.NORMAL)
+    text_widget.delete('1.0', tk.END)
+    
+    # Split text by image references
+    import re
+    pattern = r'\[IMAGE:([^\]]+)\]'
+    parts = re.split(pattern, notes_text)
+    
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # Regular text
+            if part.strip():
+                text_widget.insert(tk.END, part)
+        else:
+            # Image filename
+            image_filename = part
+            task_images_dir = os.path.join(IMAGES_DIR, task_id)
+            image_path = os.path.join(task_images_dir, image_filename)
+            
+            if os.path.exists(image_path):
+                try:
+                    # Load and resize image
+                    img = Image.open(image_path)
+                    img.thumbnail((max_img_width, max_img_height), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    # Create index for image and store reference
+                    img_index = f'img_{i}'
+                    text_widget.image_dict = getattr(text_widget, 'image_dict', {})
+                    text_widget.image_dict[img_index] = photo
+                    
+                    # Insert image
+                    text_widget.insert(tk.END, '\n')
+                    text_widget.image_create(tk.END, image=photo)
+                    text_widget.insert(tk.END, f' [{image_filename}]\n')
+                except Exception as e:
+                    text_widget.insert(tk.END, f'\n[IMAGE: {image_filename} - Failed to load]\n')
+            else:
+                text_widget.insert(tk.END, f'\n[IMAGE: {image_filename} - File not found]\n')
+    
+    text_widget.config(state=tk.DISABLED)
+
 class TaskManager:
     def __init__(self):
         self.tasks = []
@@ -508,9 +560,14 @@ class TaskDialog(tk.Toplevel):
         self.history_box.pack(fill=tk.BOTH, expand=True)
         history_scrollbar.config(command=self.history_box.yview)
         
-        self.history_box.config(state=tk.NORMAL)
-        self.history_box.insert('1.0', notes_history)
-        self.history_box.config(state=tk.DISABLED)
+        # Render history with images
+        task_id = self.task.get('id') if self.task else None
+        if task_id and notes_history:
+            render_notes_with_images(self.history_box, notes_history, task_id)
+        else:
+            self.history_box.config(state=tk.NORMAL)
+            self.history_box.insert('1.0', notes_history if notes_history else 'No history')
+            self.history_box.config(state=tk.DISABLED)
 
         # New notes entry with image support
         new_notes_frame = ttk.LabelFrame(notes_paned, text='Add New Notes', padding=4)
@@ -783,9 +840,16 @@ class TaskDetailWindow(tk.Toplevel):
         
         notes_text = tk.Text(notes_frame, width=100, height=6, wrap=tk.WORD, state=tk.DISABLED, font=('Arial', 10))
         notes_text.pack(fill=tk.BOTH, expand=False, padx=4, pady=4)
-        notes_text.config(state=tk.NORMAL)
-        notes_text.insert('1.0', self.task.get('notes', 'No notes'))
-        notes_text.config(state=tk.DISABLED)
+        
+        # Render notes with embedded images
+        task_id = self.task.get('id')
+        notes_content = self.task.get('notes', 'No notes')
+        if task_id and notes_content and 'IMAGE' in notes_content:
+            render_notes_with_images(notes_text, notes_content, task_id)
+        else:
+            notes_text.config(state=tk.NORMAL)
+            notes_text.insert('1.0', notes_content)
+            notes_text.config(state=tk.DISABLED)
         
         # Notes history section
         history_frame = ttk.LabelFrame(main_frame, text='Notes History', padding=10)
@@ -798,9 +862,15 @@ class TaskDetailWindow(tk.Toplevel):
         history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4, pady=4)
         history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        history_text.config(state=tk.NORMAL)
-        history_text.insert('1.0', self.task.get('notes_history', 'No history'))
-        history_text.config(state=tk.DISABLED)
+        # Render history with embedded images
+        task_id = self.task.get('id')
+        history_content = self.task.get('notes_history', 'No history')
+        if task_id and history_content and 'IMAGE' in history_content:
+            render_notes_with_images(history_text, history_content, task_id)
+        else:
+            history_text.config(state=tk.NORMAL)
+            history_text.insert('1.0', history_content)
+            history_text.config(state=tk.DISABLED)
         
         # Images section - display any images from the notes
         self.display_task_images(main_frame)
