@@ -1,7 +1,9 @@
 import os
 import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
+from PIL import Image, ImageTk
+import shutil
 
 try:
     from tkcalendar import DateEntry, Calendar
@@ -15,9 +17,14 @@ except ImportError:
     raise ImportError('Please install openpyxl: pip install openpyxl')
 
 FILE_NAME = os.path.join(os.path.dirname(__file__), 'Mytasks2026.xlsx')
+IMAGES_DIR = os.path.join(os.path.dirname(__file__), 'task_images')
 ACTIVE_SHEET = 'Active'
 DELETED_SHEET = 'deleted'
 STATUS_OPTIONS = ['open', 'close', 'deleted']
+
+# Create images directory if it doesn't exist
+if not os.path.exists(IMAGES_DIR):
+    os.makedirs(IMAGES_DIR)
 
 class TaskManager:
     def __init__(self):
@@ -471,12 +478,18 @@ class TaskDialog(tk.Toplevel):
         self.history_box.insert('1.0', notes_history)
         self.history_box.config(state=tk.DISABLED)
 
-        # New notes entry
+        # New notes entry with image support
         new_notes_frame = ttk.LabelFrame(notes_paned, text='Add New Notes', padding=4)
         notes_paned.add(new_notes_frame, height=150)
 
+        # Toolbar for notes (insert image button)
+        notes_toolbar = ttk.Frame(new_notes_frame)
+        notes_toolbar.pack(fill=tk.X, pady=4)
+        ttk.Button(notes_toolbar, text='📷 Insert Image', command=self.insert_image_to_notes).pack(side=tk.LEFT, padx=2)
+
         self.notes_box = tk.Text(new_notes_frame, wrap=tk.WORD)
         self.notes_box.pack(fill=tk.BOTH, expand=True)
+        self.task_id_for_images = self.task_id if self.task else None
 
         # Buttons at bottom
         row += 1
@@ -570,6 +583,50 @@ class TaskDialog(tk.Toplevel):
             ttk.Label(frame, text='(yyyy-mm-dd)').pack(side=tk.LEFT, padx=2)
 
         return frame
+
+    def insert_image_to_notes(self):
+        """Allow user to insert an image into notes."""
+        if not self.task:
+            messagebox.showwarning('Warning', 'Please select a task or save the task first.')
+            return
+        
+        # Open file dialog for image selection
+        file_path = filedialog.askopenfilename(
+            title='Select an image',
+            filetypes=[('Image files', '*.png *.jpg *.jpeg *.gif *.bmp'), ('All files', '*.*')]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # Create task-specific image folder
+            task_images_dir = os.path.join(IMAGES_DIR, self.task_id)
+            if not os.path.exists(task_images_dir):
+                os.makedirs(task_images_dir)
+            
+            # Copy image to task folder
+            image_name = os.path.basename(file_path)
+            dest_path = os.path.join(task_images_dir, image_name)
+            
+            # Handle duplicate filenames
+            if os.path.exists(dest_path):
+                base, ext = os.path.splitext(image_name)
+                counter = 1
+                while os.path.exists(os.path.join(task_images_dir, f'{base}_{counter}{ext}')):
+                    counter += 1
+                image_name = f'{base}_{counter}{ext}'
+                dest_path = os.path.join(task_images_dir, image_name)
+            
+            shutil.copy2(file_path, dest_path)
+            
+            # Insert image reference into notes
+            image_ref = f'[IMAGE:{image_name}]'
+            self.notes_box.insert(tk.END, f'\n{image_ref}\n')
+            messagebox.showinfo('Success', f'Image "{image_name}" inserted to notes.')
+        
+        except Exception as e:
+            messagebox.showerror('Error', f'Failed to insert image: {e}')
 
     def on_save_clicked(self):
         if self.edit_mode == 'notes':
@@ -711,10 +768,61 @@ class TaskDetailWindow(tk.Toplevel):
         history_text.insert('1.0', self.task.get('notes_history', 'No history'))
         history_text.config(state=tk.DISABLED)
         
+        # Images section - display any images from the notes
+        self.display_task_images(main_frame)
+        
         # Close button
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=8)
         ttk.Button(btn_frame, text='Close', command=self.destroy).pack(side=tk.RIGHT, padx=4)
+
+    def display_task_images(self, parent):
+        """Display images associated with this task."""
+        task_id = self.task.get('id')
+        task_images_dir = os.path.join(IMAGES_DIR, task_id)
+        
+        if not os.path.exists(task_images_dir):
+            return
+        
+        image_files = [f for f in os.listdir(task_images_dir) 
+                      if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp'))]
+        
+        if not image_files:
+            return
+        
+        # Create images frame
+        images_frame = ttk.LabelFrame(parent, text='Task Images', padding=10)
+        images_frame.pack(fill=tk.BOTH, expand=False, pady=8)
+        
+        # Scroll frame for images
+        canvas = tk.Canvas(images_frame, height=150, bg='white')
+        scrollbar = ttk.Scrollbar(images_frame, orient='horizontal', command=canvas.xview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            '<Configure>',
+            lambda e: canvas.configure(scrollregion=canvas.bbox('all'))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
+        canvas.configure(xscroll=scrollbar.set)
+        
+        # Add images to scrollable frame
+        for image_file in image_files[:10]:  # Limit to 10 images for performance
+            image_path = os.path.join(task_images_dir, image_file)
+            try:
+                img = Image.open(image_path)
+                img.thumbnail((120, 120), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                
+                img_label = tk.Label(scrollable_frame, image=photo, bg='white')
+                img_label.image = photo  # Keep a reference
+                img_label.pack(side=tk.LEFT, padx=5, pady=5)
+            except Exception as e:
+                print(f"Failed to display image {image_file}: {e}")
+        
+        canvas.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        scrollbar.pack(fill=tk.X, padx=4)
 
 
 def main():
