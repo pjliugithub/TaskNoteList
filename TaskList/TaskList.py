@@ -26,6 +26,40 @@ STATUS_OPTIONS = ['open', 'close', 'deleted']
 if not os.path.exists(IMAGES_DIR):
     os.makedirs(IMAGES_DIR)
 
+# Helper function for topmost dialogs
+def show_warning(title, message):
+    """Show a warning dialog that appears on top and gets focus."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    messagebox.showwarning(title, message, parent=root)
+    root.destroy()
+
+def show_error(title, message):
+    """Show an error dialog that appears on top and gets focus."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    messagebox.showerror(title, message, parent=root)
+    root.destroy()
+
+def show_info(title, message):
+    """Show an info dialog that appears on top and gets focus."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    messagebox.showinfo(title, message, parent=root)
+    root.destroy()
+
+def ask_yes_no(title, message):
+    """Show a yes/no dialog that appears on top and gets focus."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    result = messagebox.askyesno(title, message, parent=root)
+    root.destroy()
+    return result
+
 class TaskManager:
     def __init__(self):
         self.tasks = []
@@ -346,7 +380,7 @@ class TaskListApp:
     def open_edit_dialog(self):
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning('No selection', 'Please select a task to edit.')
+            show_warning('No selection', 'Please select a task to edit.')
             return
         task_id = selected[0]
         TaskDialog(self.root, 'Edit Task', self.manager, task_id=task_id, on_save=self.on_after_change)
@@ -354,10 +388,10 @@ class TaskListApp:
     def delete_selected_task(self):
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning('No selection', 'Please select a task to delete.')
+            show_warning('No selection', 'Please select a task to delete.')
             return
         task_id = selected[0]
-        confirm = messagebox.askyesno('Confirm Delete', 'Delete this task? (This moves it to deleted list)')
+        confirm = ask_yes_no('Confirm Delete', 'Delete this task? (This moves it to deleted list)')
         if not confirm:
             return
         self.manager.delete_task(task_id)
@@ -373,9 +407,9 @@ class TaskListApp:
             if os.path.exists(FILE_NAME):
                 os.startfile(FILE_NAME)
             else:
-                messagebox.showerror('Error', f'Excel file not found: {FILE_NAME}')
+                show_error('Error', f'Excel file not found: {FILE_NAME}')
         except Exception as e:
-            messagebox.showerror('Error', f'Failed to open Excel file: {e}')
+            show_error('Error', f'Failed to open Excel file: {e}')
 
 
 class TaskDialog(tk.Toplevel):
@@ -587,7 +621,7 @@ class TaskDialog(tk.Toplevel):
     def insert_image_to_notes(self):
         """Allow user to insert an image into notes."""
         if not self.task:
-            messagebox.showwarning('Warning', 'Please select a task or save the task first.')
+            show_warning('Warning', 'Please select a task or save the task first.')
             return
         
         # Open file dialog for image selection
@@ -623,22 +657,22 @@ class TaskDialog(tk.Toplevel):
             # Insert image reference into notes
             image_ref = f'[IMAGE:{image_name}]'
             self.notes_box.insert(tk.END, f'\n{image_ref}\n')
-            messagebox.showinfo('Success', f'Image "{image_name}" inserted to notes.')
+            show_info('Success', f'Image "{image_name}" inserted to notes.')
         
         except Exception as e:
-            messagebox.showerror('Error', f'Failed to insert image: {e}')
+            show_error('Error', f'Failed to insert image: {e}')
 
     def on_save_clicked(self):
         if self.edit_mode == 'notes':
             # Notes only mode - only save non-blank new notes
             new_notes = self.notes_box.get('1.0', tk.END).strip()
             if not self.task:
-                messagebox.showerror('Error', 'Task not found.')
+                show_error('Error', 'Task not found.')
                 return
             if new_notes:  # Only update if there are non-blank notes
                 self.manager.update_notes(self.task_id, new_notes)
             else:
-                messagebox.showinfo('Info', 'No new notes to save.')
+                show_info('Info', 'No new notes to save.')
                 return
         elif self.edit_mode == 'full':
             # Full edit mode
@@ -651,7 +685,7 @@ class TaskDialog(tk.Toplevel):
                 due_date = self.due_date_var.get().strip()
                 status = self.status_var.get().strip()
                 if not name:
-                    messagebox.showerror('Error', 'Name is required.')
+                    show_error('Error', 'Name is required.')
                     return
                 self.manager.update_task(self.task_id, name, desc, start_date, due_date, status)
                 if notes:  # Only update notes if non-blank
@@ -664,7 +698,7 @@ class TaskDialog(tk.Toplevel):
                 due_date = self.due_date_var.get().strip()
                 status = self.status_var.get().strip()
                 if not name:
-                    messagebox.showerror('Error', 'Name is required.')
+                    show_error('Error', 'Name is required.')
                     return
                 self.manager.add_task(name, desc, notes, start_date, due_date, status)
 
